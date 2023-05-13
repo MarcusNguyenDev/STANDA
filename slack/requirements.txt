@@ -1,0 +1,2 @@
+langchain==0.0.167
+slack-bolt==1.18.0
