@@ -78,7 +78,7 @@ def build_commit_messages(commit: Commit) -> List[HumanMessage]:
         ]
 
     messages += [
-        HumanMessage(content="What did this commit do?"),
+        SystemMessage(content="Single sentence summary of the commit:"),
     ]
 
     return messages
@@ -108,13 +108,14 @@ def summarise_commits(commits: List[Commit]) -> CommitSummary:
     long_summary = chat([
         SystemMessage(content="Here are some summaries of git commit messages"),
         *[SystemMessage(content=summary) for summary in commit_summaries],
-        HumanMessage(content="You are a developer, deliver a short monologue about what you did according to the summaries"),
+        SystemMessage(content="You are a developer, deliver a short single-paragraph monologue about what you did according to the summaries. Begin with the most important or interesting parts"),
+        SystemMessage(content="Do not include a prelude to the monologue, just begin"),
     ]).content
 
     summary = chat([
         SystemMessage(content="Here is a short monologue from developer describing what they did yesterday"),
         SystemMessage(content=long_summary),
-        HumanMessage(content="Speaking as the developer, summarise what you did yesterday in one sentence"),
+        SystemMessage(content="Speaking as the developer, summarise what you did yesterday in one sentence. Beginning with the most important parts"),
     ]).content
 
     return {
@@ -131,22 +132,27 @@ def get_commits(since: datetime, until: Optional[datetime]) -> List[Commit]:
     return response.json()
 
 def doing_what(message: str) -> str:
-    since = get_since_time(message)
-    print(f"{since=}")
+    human_time, since = get_since_time(message)
+    print(f"{human_time=} {since=}")
     commits = get_commits(since, None)
     print(f"{commits=}")
     summary = summarise_commits(commits)
     print(f"{summary=}")
     changes = "\n".join([f"- {change}" for change in summary['changes']])
 
-    return f"""
-    Here's what you've been up to since {since}:
-    Short summary: {summary['summary']}
-    Long summary:
-    {summary['long_summary']}
-    Here's a list of changes:
-    {changes}
-    """
+    response = []
+    response.append(f"Here's what you've been up to since {human_time}:")
+    response.append("")
+    response.append(f"Short summary: {summary['summary']}")
+    response.append("")
+    response.append("Long summary:")
+    response.append(summary['long_summary'])
+    response.append("")
+    response.append("Here's a list of changes:")
+    response.append(changes)
+
+
+    return "\n".join(response)
 
 # Initializes your app with your bot token and socket mode handler
 app = App(token=os.environ.get("SLACK_BOT_TOKEN"))
@@ -159,7 +165,10 @@ def message_hello(message, say):
     # say() sends a message to the channel where the event was triggered
     text = message['text'].lower()
     if "what was i doing" in text:
-        say(doing_what(text))
+        say({
+            "type": "mrkdwn",
+            "text": doing_what(text),
+        })
     elif "what am i doing" in text:
         say(get_message_response(message['text']))
     elif "what are my blockers" in text:
