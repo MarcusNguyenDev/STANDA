@@ -9,7 +9,8 @@ var usersRouter = require('./routes/users');
 
 const simpleGit = require("simple-git");
 const git = simpleGit("/home/marcusedward/Desktop/STANDA");
-
+const ICAL = require("ical.js")
+const fs = require("fs")
 var app = express();
 
 
@@ -46,7 +47,7 @@ app.get('/commits', (req, res) => {
   })
   .then(() => {
       // After the checkout is done, get the logs
-      git.log(["--since",since,"--until",until,"-p","--stat"] ,(err, log) => {
+      git.log(["origin/main","--since",since,"--until",until,"-p","--stat","--no-merges"] ,(err, log) => {
           if (err) {
               console.log(err)
               res.status(500).send({error: 'An error occurred while getting the commits.'});
@@ -58,10 +59,8 @@ app.get('/commits', (req, res) => {
               date: commit.date
           }));
 
-        
-
           Promise.all(log.all.map(commit=>new Promise((resolve)=>
-            git.show(commit.hash,(err,diff)=>resolve({hash:commit.hash,message:commit.message,date:commit.date,diff:diff})))
+            git.show(commit.hash,(err,diff)=>resolve({hash:commit.hash,message:commit.message,date:commit.date,author_name:commit.author_name,author_email:commit.author_email,diff:diff})))
           )).then((diffs)=>res.json(diffs))
 
           
@@ -72,6 +71,27 @@ app.get('/commits', (req, res) => {
   });
 });
 
+app.get("/cal",(req,res,next)=>{
+  const data = fs.readFileSync("./myevents.ics", 'utf8');
+  console.log(data)
+  const jcalData = ICAL.parse(data);
+  const comp = new ICAL.Component(jcalData);
+
+  const vevents = comp.getAllSubcomponents('vevent');
+  const tasks = vevents.map(vevent => {
+      const event = new ICAL.Event(vevent);
+      return {
+          summary: event.summary,
+          description: event.description,
+            location: event.location,
+          startDate: event.startDate.toString(),
+          endDate: event.endDate.toString()
+      };
+  });
+
+
+  res.status(200).json(tasks);
+});
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
