@@ -27,6 +27,8 @@ GIT_API_URL = "https://marcusnguyen-developer.com/commits"
 CALENDAR_API_URL = "https://marcusnguyen-developer.com/cal"
 COMMIT_SUMMARY_LIMIT=50
 
+LAST_SUMMARY = ""
+
 chat = ChatOpenAI(temperature=0)
 CHAT_CONTEXT = [
     SystemMessage(content="You are a helpful assistant named STANDA, that tells people what they were doing before stand-up meetings"),
@@ -188,7 +190,7 @@ def summarise_events(events: List[CalendarEvent], say: FunctionType) -> str:
     ]).content
 
 
-def doing_what(message: str, say: FunctionType) -> str:
+def did_what(message: str, say: FunctionType) -> str:
     say("Let's see...")
     human_time, since = get_since_time(message)
     print(f"{human_time=} {since=}")
@@ -250,6 +252,72 @@ def doing_what(message: str, say: FunctionType) -> str:
         },
     ]
 
+    flattened_blocks = [block["text"]["text"] for block in blocks]
+    global LAST_SUMMARY
+    LAST_SUMMARY = "\n".join(flattened_blocks)
+
+    say(blocks=blocks)
+
+def do_what(message: str, say: FunctionType):
+    say("Well, based on what you did yesterday...")
+    print(f"{LAST_SUMMARY=}")
+    doing = chat([
+        SystemMessage(content="Here is a summary of what a developer did yesterday"),
+        SystemMessage(content=LAST_SUMMARY),
+        SystemMessage(content="Speaking as the developer, what will you do today?"),
+    ]).content
+
+    say("Got it :smile:")
+
+    say("Now, what should you _really_ do :smiling_imp:")
+    actually_doing = chat([
+        SystemMessage(content="Here is a summary of what a developer did yesterday"),
+        SystemMessage(content=LAST_SUMMARY),
+        SystemMessage(content="Speaking as the developer, describe what will you _actually_ do today in one sentence. Be honest with some tongue-in-cheek humor"),
+    ]).content
+
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*What you should be doing*: {doing}",
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*What you should _actually_ be doing*: {actually_doing}",
+            }
+        },
+    ]
+
+    say(blocks=blocks)
+
+def my_blockers(message: str, say: FunctionType):
+    say("Let's see...")
+    global LAST_SUMMARY
+    print(f"{LAST_SUMMARY=}")
+
+    blocked = chat([
+        SystemMessage(content="Here is a summary of what a developer did yesterday"),
+        SystemMessage(content=LAST_SUMMARY),
+        SystemMessage(content="Speaking as the developer, is there anything you were blocked on? If so, what"),
+    ]).content
+
+    say("Got it :smile:")
+
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Blockers*: {blocked}",
+            }
+        },
+    ]
+
     say(blocks=blocks)
 
 # Initializes your app with your bot token and socket mode handler
@@ -263,11 +331,11 @@ def message_hello(message, say):
     text = message['text'].lower()
     try:
         if "what was i doing" in text:
-            doing_what(text, say)
+            did_what(text, say)
         elif "what am i doing" in text:
-            say(get_message_response(message['text']))
+            do_what(text, say)
         elif "what are my blockers" in text:
-            say(get_message_response(message['text']))
+            my_blockers(text, say)
         else:
             print("Did not match any of the conditions")
             print(f"{message=} {say=}")
