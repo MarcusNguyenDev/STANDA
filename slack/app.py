@@ -1,7 +1,7 @@
 import os
 import re
 
-from typing import List, Optional, TypedDict
+from typing import List, Optional, Tuple, TypedDict
 from datetime import datetime, timedelta
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -23,7 +23,7 @@ from langchain.schema import (
 import requests
 
 GIT_API_URL = "https://marcusnguyen-developer.com/commits"
-COMMIT_SUMMARY_LIMIT=3
+COMMIT_SUMMARY_LIMIT=10
 
 chat = ChatOpenAI(temperature=0)
 CHAT_CONTEXT = [
