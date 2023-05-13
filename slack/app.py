@@ -24,7 +24,8 @@ from langchain.schema import (
 import requests
 
 GIT_API_URL = "https://marcusnguyen-developer.com/commits"
-COMMIT_SUMMARY_LIMIT=10
+CALENDAR_API_URL = "https://marcusnguyen-developer.com/cal"
+COMMIT_SUMMARY_LIMIT=50
 
 chat = ChatOpenAI(temperature=0)
 CHAT_CONTEXT = [
@@ -67,7 +68,7 @@ class Commit(TypedDict):
     diff: str
     
 
-def build_commit_messages(commit: Commit) -> List[HumanMessage]:
+def build_commit_messages(commit: Commit) -> List[SystemMessage]:
     messages = [
         SystemMessage(content="Here is a git commit message"),
         SystemMessage(content=commit['message']),
@@ -159,16 +160,50 @@ def get_calendar() -> List[CalendarEvent]:
     response = requests.get(CALENDAR_API_URL)
     return response.json()
 
+def build_event_message(event: CalendarEvent) -> List[SystemMessage]:
+    messages = [
+        SystemMessage(content="Here is a calendar event"),
+        SystemMessage(content=f"Summary: {event['summary']}"),
+        SystemMessage(content=f"Description: {event['description']}"),
+        SystemMessage(content=f"Location: {event['location']}"),
+        SystemMessage(content=f"Start: {event['startDate']}"),
+        SystemMessage(content=f"End: {event['endDate']}"),
+        SystemMessage(content="Now return a single-sentence in the style of a calendar event:"),
+    ]
+
+    return messages
+
+def summarise_events(events: List[CalendarEvent], say: FunctionType) -> str:
+    event_summary_messages = [
+        build_event_message(event) for event in events
+    ]
+    event_summaries = [generation[0].message.content for generation in chat.generate(event_summary_messages).generations]
+
+    say("Summarising what you did....")
+    return chat([
+        SystemMessage(content="Here are some summaries of calendar events"),
+        *[SystemMessage(content=summary) for summary in event_summaries],
+        SystemMessage(content="You are a developer, deliver a short single-paragraph monologue about what you did according to the summaries. Begin with the most important or interesting parts"),
+        SystemMessage(content="Do not include a prelude to the monologue, just begin with I..."),
+    ]).content
+
+
 def doing_what(message: str, say: FunctionType) -> str:
     say("Let's see...")
     human_time, since = get_since_time(message)
     print(f"{human_time=} {since=}")
+
+    say("Reading your calendar...")
+    events = get_calendar()
+    print(f"{events=}")
+    event_summary = summarise_events(events, say)
+
     say("Reading your git history...")
     commits = get_commits(since, None)
     print(f"{commits=}")
-    summary = summarise_commits(commits, say)
-    print(f"{summary=}")
-    changes = "\n".join([f"- {change}" for change in summary['changes']])
+    git_summary = summarise_commits(commits, say)
+    print(f"{git_summary=}")
+    changes = "\n".join([f"- {change}" for change in git_summary['changes']])
 
     blocks = [
         {
@@ -182,14 +217,14 @@ def doing_what(message: str, say: FunctionType) -> str:
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*Short summary*: {summary['summary']}",
+                "text": f"*Short summary*: {git_summary['summary']}",
             }
         },
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "*Some more details*: \n" + summary['long_summary'],
+                "text": "*Some more details*: \n" + git_summary['long_summary'],
             }
         },
         {
@@ -203,7 +238,14 @@ def doing_what(message: str, say: FunctionType) -> str:
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*What you were actually doing*: {summary['doing']}",
+                "text": f"*Calendar summary*: {event_summary}",
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*What you were actually doing*: {git_summary['doing']}",
             }
         },
     ]
