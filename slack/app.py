@@ -30,18 +30,19 @@ CHAT_CONTEXT = [
     SystemMessage(content="You are a helpful assistant named STANDA, that tells people what they were doing before stand-up meetings"),
 ]
 
-def get_since_time(human_string: str) -> datetime:
+def get_since_time(human_string: str) -> Tuple[str, datetime]:
+    human_time = human_string[17:]
     messages = [
         SystemMessage(content="Convert a human-readable string to a python timedelta. Example:"),
         SystemMessage(content="yesterday"),
         SystemMessage(content="timedelta(days=1)"),
-        HumanMessage(content=human_string[:17]),
+        HumanMessage(content=human_time),
     ]
 
     response = chat(messages)
 
     delta = eval(response.content) if re.match(r"timedelta\(.+\)", response.content) else timedelta(days=1)
-    return datetime.now() - delta
+    return human_time, datetime.now() - delta
     
 
 # def get_since_time(message: str) -> datetime:
