@@ -167,6 +167,11 @@ def message_hello(message, say):
         print("Did not match any of the conditions")
         print(f"{message=} {say=}")
 
+@app.event("app_mention")
+def handle_app_mention_events(body, logger):
+    # logger.info(body)
+    pass
+
 # Start your app
 if __name__ == "__main__":
     SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"]).start()
