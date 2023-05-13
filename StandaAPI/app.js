@@ -46,19 +46,25 @@ app.get('/commits', (req, res) => {
   })
   .then(() => {
       // After the checkout is done, get the logs
-      git.log(["--since",since,"--until",until] ,(err, log) => {
+      git.log(["--since",since,"--until",until,"-p","--stat"] ,(err, log) => {
           if (err) {
               console.log(err)
               res.status(500).send({error: 'An error occurred while getting the commits.'});
               return;
           }
-
           const commits = log.all.map(commit => ({
+              hash:commit.hash,
               message: commit.message,
               date: commit.date
           }));
 
-          res.json(commits);
+        
+
+          Promise.all(log.all.map(commit=>new Promise((resolve)=>
+            git.show(commit.hash,(err,diff)=>resolve({hash:commit.hash,message:commit.message,date:commit.date,diff:diff})))
+          )).then((diffs)=>res.json(diffs))
+
+          
       });
   })
   .catch(err => {
