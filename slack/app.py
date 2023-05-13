@@ -1,5 +1,6 @@
 import os
 import re
+from types import FunctionType
 
 from typing import List, Optional, Tuple, TypedDict
 from datetime import datetime, timedelta
@@ -31,7 +32,7 @@ CHAT_CONTEXT = [
 ]
 
 def get_since_time(human_string: str) -> Tuple[str, datetime]:
-    human_time = human_string[17:]
+    human_time = human_string[32:-1]
     messages = [
         SystemMessage(content="Convert a human-readable string to a python timedelta. Example:"),
         SystemMessage(content="yesterday"),
@@ -131,11 +132,14 @@ def get_commits(since: datetime, until: Optional[datetime]) -> List[Commit]:
     response = requests.get(f"{GIT_API_URL}?since={since_timestamp}&until={until_timestamp}")
     return response.json()
 
-def doing_what(message: str) -> str:
+def doing_what(message: str, say: FunctionType) -> str:
+    say("Let me look...")
     human_time, since = get_since_time(message)
     print(f"{human_time=} {since=}")
+    say("I'm reading your git history...")
     commits = get_commits(since, None)
     print(f"{commits=}")
+    say("I'm summarising it...")
     summary = summarise_commits(commits)
     print(f"{summary=}")
     changes = "\n".join([f"- {change}" for change in summary['changes']])
@@ -151,8 +155,10 @@ def doing_what(message: str) -> str:
     response.append("Here's a list of changes:")
     response.append(changes)
 
-
-    return "\n".join(response)
+    say({
+        "type": "mrkdown",
+        "text": "\n".join(response),
+    })
 
 # Initializes your app with your bot token and socket mode handler
 app = App(token=os.environ.get("SLACK_BOT_TOKEN"))
@@ -165,10 +171,7 @@ def message_hello(message, say):
     # say() sends a message to the channel where the event was triggered
     text = message['text'].lower()
     if "what was i doing" in text:
-        say({
-            "type": "mrkdwn",
-            "text": doing_what(text),
-        })
+        doing_what(text, say)
     elif "what am i doing" in text:
         say(get_message_response(message['text']))
     elif "what are my blockers" in text:
