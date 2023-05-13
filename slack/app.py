@@ -56,6 +56,7 @@ def get_message_response(message_text):
     return response.content
 
 class CommitSummary(TypedDict):
+    doing: str
     summary: str
     long_summary: str
     changes: List[str]
@@ -79,12 +80,12 @@ def build_commit_messages(commit: Commit) -> List[HumanMessage]:
         ]
 
     messages += [
-        SystemMessage(content="Single sentence summary of the commit:"),
+        SystemMessage(content="Now return a single-sentence in the style of a commit message:"),
     ]
 
     return messages
 
-def summarise_commits(commits: List[Commit]) -> CommitSummary:
+def summarise_commits(commits: List[Commit], say: FunctionType) -> CommitSummary:
     """
     Take a list of commits, and generate a summary using langchain.
     Commits are in the following format:
@@ -101,28 +102,42 @@ def summarise_commits(commits: List[Commit]) -> CommitSummary:
     3. An itemised list of changes made
     """
 
+    say("Summarising each commit...")
     commit_summary_messages = [
         build_commit_messages(commit) for commit in commits[:COMMIT_SUMMARY_LIMIT]
     ]
     commit_summaries = [generation[0].message.content for generation in chat.generate(commit_summary_messages).generations]
 
+    say("Summarising the summaries....")
     long_summary = chat([
         SystemMessage(content="Here are some summaries of git commit messages"),
         *[SystemMessage(content=summary) for summary in commit_summaries],
         SystemMessage(content="You are a developer, deliver a short single-paragraph monologue about what you did according to the summaries. Begin with the most important or interesting parts"),
-        SystemMessage(content="Do not include a prelude to the monologue, just begin"),
+        SystemMessage(content="Do not include a prelude to the monologue, just begin with I..."),
     ]).content
 
+    say("Summarising that summary.....")
     summary = chat([
         SystemMessage(content="Here is a short monologue from developer describing what they did yesterday"),
         SystemMessage(content=long_summary),
-        SystemMessage(content="Speaking as the developer, summarise what you did yesterday in one sentence. Beginning with the most important parts"),
+        SystemMessage(content="Speaking as the developer, summarise what you did yesterday in one sentence. Beginning with what the developer would consider the most important or interesting parts. Don't include trivial details"),
     ]).content
+
+    say("Now I'm trying to figure out what you were _actually_ doing :stuck_out_tongue:")
+
+    doing = chat([
+        SystemMessage(content="Here is a summary of what a developer has done"),
+        SystemMessage(content=summary),
+        SystemMessage(content="Speaking as the developer, descirbe what you actually did in one short sentence. Be honest with some tongue-in-cheek humor"),
+    ]).content
+
+    say("Done :sweat_smile:")
 
     return {
         "summary": summary,
         "long_summary": long_summary,
         "changes": commit_summaries,
+        "doing": doing,
     }
 
     
@@ -132,33 +147,68 @@ def get_commits(since: datetime, until: Optional[datetime]) -> List[Commit]:
     response = requests.get(f"{GIT_API_URL}?since={since_timestamp}&until={until_timestamp}")
     return response.json()
 
+#{"summary":"Team Scrum meeting","description":"Weekly team scrum meeting","location":"Standa HQ","startDate":"2023-05-13T09:00:00","endDate":"2023-05-13T10:00:00"}
+class CalendarEvent(TypedDict):
+    summary: str
+    description: str
+    location: str
+    startDate: str
+    endDate: str
+
+def get_calendar() -> List[CalendarEvent]:
+    response = requests.get(CALENDAR_API_URL)
+    return response.json()
+
 def doing_what(message: str, say: FunctionType) -> str:
-    say("Let me look...")
+    say("Let's see...")
     human_time, since = get_since_time(message)
     print(f"{human_time=} {since=}")
-    say("I'm reading your git history...")
+    say("Reading your git history...")
     commits = get_commits(since, None)
     print(f"{commits=}")
-    say("I'm summarising it...")
-    summary = summarise_commits(commits)
+    summary = summarise_commits(commits, say)
     print(f"{summary=}")
     changes = "\n".join([f"- {change}" for change in summary['changes']])
 
-    response = []
-    response.append(f"Here's what you've been up to since {human_time}:")
-    response.append("")
-    response.append(f"Short summary: {summary['summary']}")
-    response.append("")
-    response.append("Long summary:")
-    response.append(summary['long_summary'])
-    response.append("")
-    response.append("Here's a list of changes:")
-    response.append(changes)
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"Here's what you've been up to since {human_time}:",
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Short summary*: {summary['summary']}",
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*Some more details*: \n" + summary['long_summary'],
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*List of changes*: \n" + changes,
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*What you were actually doing*: {summary['doing']}",
+            }
+        },
+    ]
 
-    say({
-        "type": "mrkdown",
-        "text": "\n".join(response),
-    })
+    say(blocks=blocks)
 
 # Initializes your app with your bot token and socket mode handler
 app = App(token=os.environ.get("SLACK_BOT_TOKEN"))
@@ -168,17 +218,21 @@ app = App(token=os.environ.get("SLACK_BOT_TOKEN"))
 # visit https://slack.dev/bolt-python/api-docs/slack_bolt/kwargs_injection/args.html
 @app.message()
 def message_hello(message, say):
-    # say() sends a message to the channel where the event was triggered
     text = message['text'].lower()
-    if "what was i doing" in text:
-        doing_what(text, say)
-    elif "what am i doing" in text:
-        say(get_message_response(message['text']))
-    elif "what are my blockers" in text:
-        say(get_message_response(message['text']))
-    else:
-        print("Did not match any of the conditions")
+    try:
+        if "what was i doing" in text:
+            doing_what(text, say)
+        elif "what am i doing" in text:
+            say(get_message_response(message['text']))
+        elif "what are my blockers" in text:
+            say(get_message_response(message['text']))
+        else:
+            print("Did not match any of the conditions")
+            print(f"{message=} {say=}")
+    except Exception as e:
+        print(f"{e=}")
         print(f"{message=} {say=}")
+        say("Sorry, something went wrong :(")
 
 @app.event("app_mention")
 def handle_app_mention_events(body, logger):
