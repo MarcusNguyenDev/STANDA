@@ -7,7 +7,11 @@ var logger = require('morgan');
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
 
+const simpleGit = require("simple-git");
+const git = simpleGit("/home/marcusedward/Desktop/STANDA");
+
 var app = express();
+
 
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
@@ -21,6 +25,53 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
+
+app.get('/commits', (req, res) => {
+  if (!req.query.since) {
+    res.status(400).json({error:"Not specified since"})
+    return;
+  }
+
+  // Query parameters for branch, since, and until
+  const branch = req.query.branch || 'main'; // If no branch query param, default to 'main'
+  //const since = new Date(req.query.since * 1000).toISOString();
+  const since = "2014-02-12T16:36:00-07:00";
+  const until = new Date().toISOString();
+
+  // Fetch the changes from the remote repository
+  git.fetch().then(() => {
+      // After the fetch is done, checkout to the specified branch
+      console.log("checking out "+branch )
+      return git.checkout(branch);
+  })
+  .then(() => {
+      // After the checkout is done, get the logs
+      git.log(["--since",since,"--until",until,"-p","--stat"] ,(err, log) => {
+          if (err) {
+              console.log(err)
+              res.status(500).send({error: 'An error occurred while getting the commits.'});
+              return;
+          }
+          const commits = log.all.map(commit => ({
+              hash:commit.hash,
+              message: commit.message,
+              date: commit.date
+          }));
+
+        
+
+          Promise.all(log.all.map(commit=>new Promise((resolve)=>
+            git.show(commit.hash,(err,diff)=>resolve({hash:commit.hash,message:commit.message,date:commit.date,diff:diff})))
+          )).then((diffs)=>res.json(diffs))
+
+          
+      });
+  })
+  .catch(err => {
+      res.status(500).send({error: 'An error occurred while fetching the changes or checking out the branch.'});
+  });
+});
+
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
