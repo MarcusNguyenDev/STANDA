@@ -1,4 +1,8 @@
 import os
+import re
+
+from typing import List, Optional, TypedDict
+from datetime import datetime, timedelta
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
@@ -16,10 +20,33 @@ from langchain.schema import (
     SystemMessage
 )
 
+import requests
+
+GIT_API_URL = "https://marcusnguyen-developer.com/commits"
+COMMIT_SUMMARY_LIMIT=3
+
 chat = ChatOpenAI(temperature=0)
 CHAT_CONTEXT = [
     SystemMessage(content="You are a helpful assistant named STANDA, that tells people what they were doing before stand-up meetings"),
 ]
+
+def get_since_time(human_string: str) -> datetime:
+    messages = [
+        SystemMessage(content="Convert a human-readable string to a python timedelta. Example:"),
+        SystemMessage(content="yesterday"),
+        SystemMessage(content="timedelta(days=1)"),
+        HumanMessage(content=human_string[:17]),
+    ]
+
+    response = chat(messages)
+
+    delta = eval(response.content) if re.match(r"timedelta\(.+\)", response.content) else timedelta(days=1)
+    return datetime.now() - delta
+    
+
+# def get_since_time(message: str) -> datetime:
+#     # TODO parse the message to get the time
+#     return datetime.now() - timedelta(days=1)
 
 def get_message_response(message_text):
     response = chat(CHAT_CONTEXT + [HumanMessage(content=message_text)])
